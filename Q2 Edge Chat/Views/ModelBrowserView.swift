@@ -1,4 +1,50 @@
 import SwiftUI
+import UniformTypeIdentifiers
+
+// MARK: - Local File Row
+
+struct LocalFileRow: View {
+    let file: DiscoveredFile
+    let isImporting: Bool
+    let progress: Double
+    let onImport: () -> Void
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(file.filename)
+                    .font(.body)
+                    .lineLimit(1)
+                Text(file.formattedSize)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            if isImporting {
+                HStack(spacing: 8) {
+                    ProgressView(value: progress)
+                        .frame(width: 60)
+                    Text("\(Int(progress * 100))%")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .monospacedDigit()
+                        .frame(width: 40)
+                }
+            } else {
+                Button("Import") {
+                    onImport()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(8)
+    }
+}
+
+// MARK: - Search Bar
 
 struct SearchBar: View {
     @Binding var searchText: String
@@ -191,10 +237,9 @@ struct StaffPickCard: View {
 
 struct ModelDetailView: View {
     let modelDetail: ModelDetail
-    let isDownloaded: Bool
-    let isDownloading: Bool
-    let onDownload: () -> Void
+    @ObservedObject var vm: BrowseModelsViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var showFullReadme = false
     
     private var relativeFormatter: RelativeDateTimeFormatter {
         let formatter = RelativeDateTimeFormatter()
@@ -214,23 +259,25 @@ struct ModelDetailView: View {
                     Spacer()
                     
                     if modelDetail.hasGGUF {
-                        if isDownloading {
+                        if vm.isDownloading(modelDetail.model) {
                             HStack(spacing: 8) {
                                 ProgressView()
                                     .scaleEffect(0.8)
-                                Text("Downloading...")
+                                Text("Downloading \(Int((vm.downloadProgress[modelDetail.model.id] ?? 0) * 100))%")
                                     .font(.caption)
+                                    .monospacedDigit()
                             }
-                        } else if isDownloaded {
+                        } else if vm.isDownloaded(modelDetail.model) {
                             HStack(spacing: 4) {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.green)
                                 Text("Downloaded")
                                     .font(.caption)
                             }
+                            // Added option to redownload/delete could go here
                         } else {
                             Button("Download") {
-                                onDownload()
+                                Task { await vm.download(modelDetail.model) }
                             }
                             .buttonStyle(.borderedProminent)
                         }
@@ -239,8 +286,14 @@ struct ModelDetailView: View {
                 .padding(.horizontal)
                 .padding(.top, 8)
                 
+                // Progress Bar for background download
+                if let progress = vm.downloadProgress[modelDetail.model.id] {
+                    ProgressView(value: progress)
+                        .padding(.horizontal)
+                }
+                
                 VStack(alignment: .leading, spacing: 20) {
-                    // Header
+                    // Header Info
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
@@ -254,7 +307,6 @@ struct ModelDetailView: View {
                                         .foregroundColor(.secondary)
                                 }
                             }
-                            
                             Spacer()
                         }
                         
@@ -290,79 +342,72 @@ struct ModelDetailView: View {
                         }
                         .font(.caption)
                         
-                        // Tags
-                        HStack {
-                            if let pipelineTag = modelDetail.model.pipelineTag {
-                                Text(pipelineTag)
+                        // Quantization Selection (The Core Request)
+                        if !modelDetail.availableQuantizations.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Quantization Level")
                                     .font(.caption)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color.blue.opacity(0.1))
-                                    .foregroundColor(.blue)
-                                    .cornerRadius(6)
+                                    .foregroundColor(.secondary)
+                                    .textCase(.uppercase)
+                                
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(modelDetail.availableQuantizations, id: \.self) { quant in
+                                            Button(action: {
+                                                vm.onQuantizationSelected(quant)
+                                            }) {
+                                                Text(quant)
+                                                    .font(.subheadline)
+                                                    .fontWeight(vm.selectedQuantization == quant ? .bold : .regular)
+                                                    .padding(.horizontal, 12)
+                                                    .padding(.vertical, 6)
+                                                    .background(vm.selectedQuantization == quant ? Color.blue : Color.gray.opacity(0.1))
+                                                    .foregroundColor(vm.selectedQuantization == quant ? .white : .primary)
+                                                    .cornerRadius(16)
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // Show selected filename
+                                if let file = modelDetail.quantizedFiles[vm.selectedQuantization] {
+                                    Text(file.rfilename)
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                        .monospaced()
+                                }
                             }
-                            
-                            if let libraryName = modelDetail.model.libraryName {
-                                Text(libraryName)
-                                    .font(.caption)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color.green.opacity(0.1))
-                                    .foregroundColor(.green)
-                                    .cornerRadius(6)
-                            }
-                            
-                            if modelDetail.hasGGUF {
-                                Text("GGUF Available")
-                                    .font(.caption)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color.orange.opacity(0.1))
-                                    .foregroundColor(.orange)
-                                    .cornerRadius(6)
-                            }
+                            .padding(.vertical, 4)
                         }
-                    }
-                    
-                    Divider()
-                    
-                    // README Content
-                    if let readme = modelDetail.readme, !readme.isEmpty {
+                        
+                        Divider()
+                        
+                        // Enhanced Summary Section
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Model Card")
+                            Text("About this model")
                                 .font(.headline)
                             
-                            MarkdownText(markdown: readme)
-                        }
-                    }
-                    
-                    Divider()
-                    
-                    // Files Section
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Files")
-                            .font(.headline)
-                        
-                        if modelDetail.hasGGUF {
-                            Text("GGUF Files (Compatible)")
-                                .font(.subheadline)
-                                .foregroundColor(.green)
-                            
-                            ForEach(modelDetail.ggufFiles, id: \.rfilename) { file in
-                                HStack {
-                                    Image(systemName: "doc.fill")
-                                        .foregroundColor(.green)
-                                    Text(file.rfilename)
-                                        .font(.caption)
-                                        .foregroundColor(.primary)
-                                    Spacer()
+                            if showFullReadme {
+                                if let readme = modelDetail.readme {
+                                    MarkdownText(markdown: readme)
+                                } else {
+                                    Text("No description available")
+                                        .foregroundColor(.secondary)
                                 }
-                                .padding(.vertical, 2)
+                            } else {
+                                Text(vm.modelSummary)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(nil)
+                                
+                                Button("Read Full Model Card") {
+                                    withAnimation {
+                                        showFullReadme = true
+                                    }
+                                }
+                                .font(.caption)
+                                .padding(.top, 4)
                             }
-                        } else {
-                            Text("No GGUF files available for download")
-                                .font(.subheadline)
-                                .foregroundColor(.orange)
                         }
                     }
                     
@@ -427,6 +472,57 @@ struct ModelBrowserView: View {
                     .padding(.horizontal)
                 }
                 
+                // Local Files Section (discovered GGUF files in Documents folder)
+                if !vm.discoveredLocalFiles.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Local Files")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                            Spacer()
+                            Text("Found in Documents")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal)
+
+                        Text("GGUF files found in your Documents folder ready to import")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal)
+
+                        LazyVStack(spacing: 8) {
+                            ForEach(vm.discoveredLocalFiles) { file in
+                                LocalFileRow(
+                                    file: file,
+                                    isImporting: vm.isImporting(file),
+                                    progress: vm.importProgressFor(file),
+                                    onImport: {
+                                        Task { await vm.importLocalFile(file) }
+                                    }
+                                )
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+
+                // Import from Files Button
+                VStack(alignment: .leading, spacing: 12) {
+                    Button(action: { vm.showFilePicker = true }) {
+                        HStack {
+                            Image(systemName: "folder")
+                            Text("Import from Files...")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+                .padding(.horizontal)
+
                 // Staff Picks Section
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -436,7 +532,7 @@ struct ModelBrowserView: View {
                         Spacer()
                     }
                     .padding(.horizontal)
-                    
+
                     Text("Curated small models (1-3B parameters) optimized for performance")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
@@ -517,12 +613,21 @@ struct ModelBrowserView: View {
             if let modelDetail = vm.selectedModelDetail {
                 ModelDetailView(
                     modelDetail: modelDetail,
-                    isDownloaded: vm.isDownloaded(modelDetail.model),
-                    isDownloading: vm.isDownloading(modelDetail.model),
-                    onDownload: {
-                        Task { await vm.download(modelDetail.model) }
-                    }
+                    vm: vm
                 )
+            }
+        }
+        .fileImporter(
+            isPresented: $vm.showFilePicker,
+            allowedContentTypes: [UTType(filenameExtension: "gguf") ?? .data],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                Task { await vm.importFromDocumentPicker(url: url) }
+            case .failure(let error):
+                vm.errorMessage = "Failed to select file: \(error.localizedDescription)"
             }
         }
         .overlay {

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		132C42FE2E4333B500E24B13 /* SwiftLlama in Frameworks */ = {isa = PBXBuildFile; productRef = 132C42FD2E4333B500E24B13 /* SwiftLlama */; };
+		FLUID00012EF3000000000001 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = FLUID00022EF3000000000002 /* FluidAudio */; };
 		1371CE602E34333600209092 /* ModelManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1371CE5F2E34333400209092 /* ModelManifest.swift */; };
 		1371CE6C2E345FF700209092 /* LlamaEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1371CE612E34547700209092 /* LlamaEngine.swift */; };
 		13AF4A922E3336EA004AC50F /* BrowseModelsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13AF4A912E3336DF004AC50F /* BrowseModelsViewModel.swift */; };
@@ -29,6 +30,11 @@
 		21E506582E2D1FD200D26F61 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E506572E2D1FD200D26F61 /* ChatView.swift */; };
 		21E5065C2E2D4E3F00D26F61 /* DynamicTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E5065B2E2D4E3F00D26F61 /* DynamicTextEditor.swift */; };
 		21E506612E2D651D00D26F61 /* MessagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E506602E2D651D00D26F61 /* MessagesView.swift */; };
+		81335FC72EF135DD002E233B /* PERFORMANCE_METRICS.md in Resources */ = {isa = PBXBuildFile; fileRef = 81335FC62EF135DD002E233B /* PERFORMANCE_METRICS.md */; };
+		VOICE001012EF2000002E233B /* AudioSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = VOICE001002EF2000002E233B /* AudioSessionManager.swift */; };
+		VOICE001022EF2000002E233B /* AudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = VOICE001032EF2000002E233B /* AudioCaptureService.swift */; };
+		VOICE001042EF2000002E233B /* VoiceInputManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = VOICE001052EF2000002E233B /* VoiceInputManager.swift */; };
+		VOICE001062EF2000002E233B /* VoiceInputButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = VOICE001072EF2000002E233B /* VoiceInputButton.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -73,6 +79,11 @@
 		21E506572E2D1FD200D26F61 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		21E5065B2E2D4E3F00D26F61 /* DynamicTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicTextEditor.swift; sourceTree = "<group>"; };
 		21E506602E2D651D00D26F61 /* MessagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagesView.swift; sourceTree = "<group>"; };
+		81335FC62EF135DD002E233B /* PERFORMANCE_METRICS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PERFORMANCE_METRICS.md; sourceTree = "<group>"; };
+		VOICE001002EF2000002E233B /* AudioSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSessionManager.swift; sourceTree = "<group>"; };
+		VOICE001032EF2000002E233B /* AudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureService.swift; sourceTree = "<group>"; };
+		VOICE001052EF2000002E233B /* VoiceInputManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInputManager.swift; sourceTree = "<group>"; };
+		VOICE001072EF2000002E233B /* VoiceInputButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInputButton.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -99,6 +110,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				132C42FE2E4333B500E24B13 /* SwiftLlama in Frameworks */,
+				FLUID00012EF3000000000001 /* FluidAudio in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -152,6 +164,7 @@
 			isa = PBXGroup;
 			children = (
 				13AF4AA32E342FA0004AC50F /* MessageRow.swift */,
+				VOICE001072EF2000002E233B /* VoiceInputButton.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -172,6 +185,7 @@
 				21E506532E2D1DE200D26F61 /* ContentView.swift */,
 				13B8824C2E2B7716006A0005 /* FrontPageView.swift */,
 				21E5065B2E2D4E3F00D26F61 /* DynamicTextEditor.swift */,
+				81335FC62EF135DD002E233B /* PERFORMANCE_METRICS.md */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -192,12 +206,23 @@
 		13B882562E2C31C2006A0005 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				VOICE001082EF2000002E233B /* Audio */,
 				1371CE612E34547700209092 /* LlamaEngine.swift */,
 				1371CE5F2E34333400209092 /* ModelManifest.swift */,
 				13AF4A9C2E342DB1004AC50F /* ChatManager.swift */,
 				13B882572E2C31D3006A0005 /* ModelManager.swift */,
 			);
 			path = Services;
+			sourceTree = "<group>";
+		};
+		VOICE001082EF2000002E233B /* Audio */ = {
+			isa = PBXGroup;
+			children = (
+				VOICE001002EF2000002E233B /* AudioSessionManager.swift */,
+				VOICE001032EF2000002E233B /* AudioCaptureService.swift */,
+				VOICE001052EF2000002E233B /* VoiceInputManager.swift */,
+			);
+			path = Audio;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -221,6 +246,7 @@
 			name = "Q2 Edge Chat";
 			packageProductDependencies = (
 				132C42FD2E4333B500E24B13 /* SwiftLlama */,
+				FLUID00022EF3000000000002 /* FluidAudio */,
 			);
 			productName = "Q2 Edge Chat";
 			productReference = 139FBB3B2E2A1D35003EF52B /* Q2 Edge Chat.app */;
@@ -306,6 +332,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				132C42FC2E4333B500E24B13 /* XCRemoteSwiftPackageReference "QSwiftLlama" */,
+				FLUID00032EF3000000000003 /* XCRemoteSwiftPackageReference "FluidAudio" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 139FBB3C2E2A1D35003EF52B /* Products */;
@@ -325,6 +352,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				13B882522E2B7716006A0005 /* Assets.xcassets in Resources */,
+				81335FC72EF135DD002E233B /* PERFORMANCE_METRICS.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -369,6 +397,10 @@
 				1371CE6C2E345FF700209092 /* LlamaEngine.swift in Sources */,
 				13B882582E2C31D8006A0005 /* ModelManager.swift in Sources */,
 				13AF4AA12E342EF0004AC50F /* ChatListView.swift in Sources */,
+				VOICE001012EF2000002E233B /* AudioSessionManager.swift in Sources */,
+				VOICE001022EF2000002E233B /* AudioCaptureService.swift in Sources */,
+				VOICE001042EF2000002E233B /* VoiceInputManager.swift in Sources */,
+				VOICE001062EF2000002E233B /* VoiceInputButton.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -528,23 +560,26 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = FS8K8H33HP;
+				DEVELOPMENT_TEAM = XM6E4PUXTU;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Q2 Edge Chat";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Q2 Edge Chat uses the microphone for voice input to enable hands-free chat with AI models.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UIFileSharingEnabled = YES;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = "michaelgathara.Q2-Edge-Chat";
+				PRODUCT_BUNDLE_IDENTIFIER = "arzamen.Q2-Edge-Chat";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -559,23 +594,26 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = FS8K8H33HP;
+				DEVELOPMENT_TEAM = XM6E4PUXTU;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Q2 Edge Chat";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Q2 Edge Chat uses the microphone for voice input to enable hands-free chat with AI models.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UIFileSharingEnabled = YES;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = "michaelgathara.Q2-Edge-Chat";
+				PRODUCT_BUNDLE_IDENTIFIER = "arzamen.Q2-Edge-Chat";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -589,10 +627,11 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = XM6E4PUXTU;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "michaelgathara.Q2-Edge-ChatTests";
+				PRODUCT_BUNDLE_IDENTIFIER = "arzamen.Q2-Edge-ChatTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -607,10 +646,11 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = XM6E4PUXTU;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "michaelgathara.Q2-Edge-ChatTests";
+				PRODUCT_BUNDLE_IDENTIFIER = "arzamen.Q2-Edge-ChatTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -624,9 +664,10 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = XM6E4PUXTU;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "michaelgathara.Q2-Edge-ChatUITests";
+				PRODUCT_BUNDLE_IDENTIFIER = "arzamen.Q2-Edge-ChatUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -640,9 +681,10 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = XM6E4PUXTU;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "michaelgathara.Q2-Edge-ChatUITests";
+				PRODUCT_BUNDLE_IDENTIFIER = "arzamen.Q2-Edge-ChatUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -701,6 +743,14 @@
 				kind = branch;
 			};
 		};
+		FLUID00032EF3000000000003 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/FluidInference/FluidAudio.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.7.9;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -708,6 +758,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 132C42FC2E4333B500E24B13 /* XCRemoteSwiftPackageReference "QSwiftLlama" */;
 			productName = SwiftLlama;
+		};
+		FLUID00022EF3000000000002 /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FLUID00032EF3000000000003 /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

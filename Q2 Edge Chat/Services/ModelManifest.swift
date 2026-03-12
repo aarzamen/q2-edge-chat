@@ -1,6 +1,44 @@
 import Foundation
 import Combine
 
+// MARK: - Discovered Local File
+
+/// Represents a GGUF file found in the Documents folder that hasn't been imported yet
+struct DiscoveredFile: Identifiable {
+    let id = UUID()
+    let url: URL
+    let filename: String
+    let fileSize: Int64
+
+    var formattedSize: String {
+        ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
+    }
+}
+
+// MARK: - GGUF Validation
+
+enum GGUFValidationError: LocalizedError {
+    case notGGUF
+    case fileTooSmall
+    case invalidMagic
+    case readError(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .notGGUF:
+            return "File is not a GGUF model file"
+        case .fileTooSmall:
+            return "File is too small to be a valid GGUF model (minimum 1MB)"
+        case .invalidMagic:
+            return "File does not have valid GGUF format header"
+        case .readError(let message):
+            return "Could not read file: \(message)"
+        }
+    }
+}
+
+// MARK: - Manifest Entry
+
 struct ManifestEntry: Codable, Identifiable {
     let id: String
     let localURL: URL
@@ -193,5 +231,307 @@ actor ManifestStore {
         let data = try JSONEncoder().encode(entries)
         try data.write(to: fileURL, options: .atomic)
         didChange.send()                                   
+    }
+    
+    /// Import a local GGUF file from anywhere on the Mac
+    func importLocalModel(from sourceURL: URL, modelID: String) throws {
+        let fm = FileManager.default
+        
+        // Create Models directory in Library if it doesn't exist
+        guard let libraryURL = fm.urls(for: .libraryDirectory, in: .userDomainMask).first else {
+            throw NSError(domain: "ManifestStore", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not access Library directory"])
+        }
+        
+        let modelsDir = libraryURL.appendingPathComponent("Models", isDirectory: true)
+        try fm.createDirectory(at: modelsDir, withIntermediateDirectories: true)
+        
+        // Copy the file to the Models directory
+        let filename = sourceURL.lastPathComponent
+        let destinationURL = modelsDir.appendingPathComponent(filename)
+        
+        // Check if file already exists
+        if fm.fileExists(atPath: destinationURL.path) {
+            // If it exists, use it directly without copying
+            let entry = ManifestEntry(
+                id: modelID,
+                localURL: destinationURL,
+                downloadedAt: Date()
+            )
+            try add(entry)
+            return
+        }
+        
+        // Copy the file
+        try fm.copyItem(at: sourceURL, to: destinationURL)
+        
+        // Create manifest entry
+        let entry = ManifestEntry(
+            id: modelID,
+            localURL: destinationURL,
+            downloadedAt: Date()
+        )
+        
+        try add(entry)
+    }
+    
+    /// Check if a model with this ID already exists
+    func exists(id: String) -> Bool {
+        entries.contains { $0.id == id }
+    }
+
+    /// Validate all manifest entries and remove those with missing files
+    /// Returns the IDs of removed entries
+    @discardableResult
+    func validateAndCleanup() throws -> [String] {
+        let fm = FileManager.default
+        var removedIDs: [String] = []
+
+        let validEntries = entries.filter { entry in
+            let exists = fm.fileExists(atPath: entry.localURL.path)
+            if !exists {
+                removedIDs.append(entry.id)
+                print("⚠️ Removing invalid manifest entry: \(entry.id) - file not found at \(entry.localURL.path)")
+            }
+            return exists
+        }
+
+        if removedIDs.count > 0 {
+            entries = validEntries
+            let data = try JSONEncoder().encode(entries)
+            try data.write(to: fileURL, options: .atomic)
+            didChange.send()
+        }
+
+        return removedIDs
+    }
+
+    /// Check if a specific model file exists on disk
+    func modelFileExists(id: String) -> Bool {
+        guard let entry = entries.first(where: { $0.id == id }) else {
+            return false
+        }
+        return FileManager.default.fileExists(atPath: entry.localURL.path)
+    }
+
+    // MARK: - Local File Discovery
+
+    /// Scan the Documents folder for GGUF files that haven't been imported yet
+    nonisolated func discoverLocalGGUFFiles() -> [DiscoveredFile] {
+        let fm = FileManager.default
+
+        guard let documentsURL = fm.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return []
+        }
+
+        do {
+            let contents = try fm.contentsOfDirectory(
+                at: documentsURL,
+                includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
+
+            return contents.compactMap { url -> DiscoveredFile? in
+                // Only include .gguf files
+                guard url.pathExtension.lowercased() == "gguf" else { return nil }
+
+                // Get file size
+                guard let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+                      resourceValues.isRegularFile == true,
+                      let fileSize = resourceValues.fileSize else {
+                    return nil
+                }
+
+                return DiscoveredFile(
+                    url: url,
+                    filename: url.lastPathComponent,
+                    fileSize: Int64(fileSize)
+                )
+            }
+        } catch {
+            print("Error scanning Documents folder: \(error)")
+            return []
+        }
+    }
+
+    // MARK: - GGUF Validation
+
+    /// Validate that a file is a valid GGUF model file
+    nonisolated func validateGGUFFile(at url: URL) throws {
+        let fm = FileManager.default
+
+        // Check file exists and get size
+        guard let attrs = try? fm.attributesOfItem(atPath: url.path),
+              let size = attrs[.size] as? Int64 else {
+            throw GGUFValidationError.readError("Could not read file attributes")
+        }
+
+        // Minimum size check (1MB)
+        guard size > 1_000_000 else {
+            throw GGUFValidationError.fileTooSmall
+        }
+
+        // Check GGUF magic bytes: 0x46554747 = "GGUF" in little-endian
+        do {
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+
+            guard let data = try handle.read(upToCount: 4), data.count == 4 else {
+                throw GGUFValidationError.readError("Could not read file header")
+            }
+
+            let magic = data.withUnsafeBytes { $0.load(as: UInt32.self) }
+            guard magic == 0x46554747 else {
+                throw GGUFValidationError.invalidMagic
+            }
+        } catch let error as GGUFValidationError {
+            throw error
+        } catch {
+            throw GGUFValidationError.readError(error.localizedDescription)
+        }
+    }
+
+    // MARK: - Import with Progress
+
+    /// Import a local GGUF file with progress tracking
+    func importDiscoveredFile(
+        _ file: DiscoveredFile,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> ManifestEntry {
+        // Validate the file first
+        try validateGGUFFile(at: file.url)
+
+        let fm = FileManager.default
+
+        // Create Models directory in Library
+        guard let libraryURL = fm.urls(for: .libraryDirectory, in: .userDomainMask).first else {
+            throw NSError(domain: "ManifestStore", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Could not access Library directory"])
+        }
+
+        // Generate model ID from filename (remove .gguf extension)
+        let baseName = file.filename.replacingOccurrences(of: ".gguf", with: "", options: .caseInsensitive)
+        let modelID = "local/\(baseName)"
+
+        // Sanitize the model ID for use as a directory name
+        let sanitizedID = modelID
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: ":", with: "_")
+
+        let modelsDir = libraryURL.appendingPathComponent("Models", isDirectory: true)
+        let modelDir = modelsDir.appendingPathComponent(sanitizedID, isDirectory: true)
+
+        try fm.createDirectory(at: modelDir, withIntermediateDirectories: true)
+
+        let destinationURL = modelDir.appendingPathComponent(file.filename)
+
+        // Check if file already exists at destination
+        if fm.fileExists(atPath: destinationURL.path) {
+            // File already exists, just create the manifest entry
+            let entry = ManifestEntry(
+                id: modelID,
+                localURL: destinationURL,
+                downloadedAt: Date()
+            )
+            try add(entry)
+            return entry
+        }
+
+        // Copy file with progress tracking
+        try await copyFileWithProgress(
+            from: file.url,
+            to: destinationURL,
+            totalSize: file.fileSize,
+            progress: progress
+        )
+
+        // Create manifest entry
+        let entry = ManifestEntry(
+            id: modelID,
+            localURL: destinationURL,
+            downloadedAt: Date()
+        )
+        try add(entry)
+
+        return entry
+    }
+
+    /// Import a file from document picker (security-scoped URL)
+    func importFromDocumentPicker(
+        url: URL,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> ManifestEntry {
+        // Start accessing security-scoped resource
+        guard url.startAccessingSecurityScopedResource() else {
+            throw NSError(domain: "ManifestStore", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "Could not access file. Please try selecting it again."])
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+
+        // Get file size
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attrs[.size] as? Int64 else {
+            throw GGUFValidationError.readError("Could not read file attributes")
+        }
+
+        let discoveredFile = DiscoveredFile(
+            url: url,
+            filename: url.lastPathComponent,
+            fileSize: size
+        )
+
+        return try await importDiscoveredFile(discoveredFile, progress: progress)
+    }
+
+    // MARK: - File Copy with Progress
+
+    private func copyFileWithProgress(
+        from sourceURL: URL,
+        to destinationURL: URL,
+        totalSize: Int64,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let sourceHandle = try FileHandle(forReadingFrom: sourceURL)
+                    defer { try? sourceHandle.close() }
+
+                    FileManager.default.createFile(atPath: destinationURL.path, contents: nil)
+                    let destinationHandle = try FileHandle(forWritingTo: destinationURL)
+                    defer { try? destinationHandle.close() }
+
+                    let bufferSize = 1024 * 1024 // 1MB chunks
+                    var bytesWritten: Int64 = 0
+
+                    while true {
+                        autoreleasepool {
+                            guard let data = try? sourceHandle.read(upToCount: bufferSize),
+                                  !data.isEmpty else {
+                                return
+                            }
+
+                            try? destinationHandle.write(contentsOf: data)
+                            bytesWritten += Int64(data.count)
+
+                            let progressValue = Double(bytesWritten) / Double(totalSize)
+                            DispatchQueue.main.async {
+                                progress(min(progressValue, 1.0))
+                            }
+                        }
+
+                        // Check if we've read all bytes
+                        if bytesWritten >= totalSize {
+                            break
+                        }
+                    }
+
+                    continuation.resume()
+                } catch {
+                    // Clean up partial file on error
+                    try? FileManager.default.removeItem(at: destinationURL)
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 }

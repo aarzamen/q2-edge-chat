@@ -61,7 +61,7 @@ struct MessageRow: View {
 
     @ViewBuilder
     private func bubble(color: Color, textColor: Color, alignment: HorizontalAlignment) -> some View {
-        VStack(alignment: alignment, spacing: 0) {
+        VStack(alignment: alignment, spacing: 4) {
             if message.speaker == .assistant {
                 MarkdownText(markdown: message.text)
                     .foregroundColor(textColor)
@@ -69,6 +69,47 @@ struct MessageRow: View {
                 Text(message.text)
                     .font(.body)
                     .foregroundColor(textColor)
+            }
+            
+            // Performance metrics (only for assistant messages)
+            if message.speaker == .assistant,
+               let ttft = message.timeToFirstToken,
+               let tps = message.tokensPerSecond,
+               let tokens = message.totalTokens {
+                
+                HStack(spacing: 6) {
+                    // Time to first token
+                    HStack(spacing: 2) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 7))
+                        Text(String(format: "%.2fs", ttft))
+                            .font(.system(size: 9, weight: .regular, design: .rounded))
+                    }
+                    
+                    Text("•")
+                        .font(.system(size: 7))
+                    
+                    // Tokens per second
+                    HStack(spacing: 2) {
+                        Image(systemName: "speedometer")
+                            .font(.system(size: 7))
+                        Text(String(format: "%.1f t/s", tps))
+                            .font(.system(size: 9, weight: .regular, design: .rounded))
+                    }
+                    
+                    Text("•")
+                        .font(.system(size: 7))
+                    
+                    // Total tokens
+                    HStack(spacing: 2) {
+                        Image(systemName: "number")
+                            .font(.system(size: 7))
+                        Text("\(tokens)")
+                            .font(.system(size: 9, weight: .regular, design: .rounded))
+                    }
+                }
+                .foregroundColor(textColor.opacity(0.5))
+                .padding(.top, 2)
             }
         }
         .padding(.horizontal, 16)
@@ -81,3 +122,35 @@ struct MessageRow: View {
         .frame(maxWidth: .infinity, alignment: alignment == .leading ? .leading : .trailing)
     }
 }
+// Preview with performance metrics
+#Preview("Message with Metrics") {
+    VStack(spacing: 16) {
+        // User message
+        MessageRow(message: Message(
+            speaker: .user,
+            text: "What is Swift?"
+        ))
+        
+        // Assistant message with metrics
+        MessageRow(message: Message(
+            speaker: .assistant,
+            text: "Swift is a powerful and intuitive programming language created by Apple for iOS, macOS, watchOS, and tvOS development. It's designed to be safe, fast, and expressive.",
+            timeToFirstToken: 0.52,
+            tokensPerSecond: 28.3,
+            totalTokens: 156
+        ))
+        
+        // Fast response
+        MessageRow(message: Message(
+            speaker: .assistant,
+            text: "Yes, it's also open source!",
+            timeToFirstToken: 0.12,
+            tokensPerSecond: 45.8,
+            totalTokens: 42
+        ))
+        
+        Spacer()
+    }
+    .background(Color(.systemGroupedBackground))
+}
+

@@ -1,5 +1,154 @@
 import Foundation
 import SwiftLlama
+import Combine
+
+/// Manages background downloads for model files using URLSession.
+class DownloadService: NSObject, ObservableObject, URLSessionDownloadDelegate {
+    static let shared = DownloadService()
+    
+    @Published var activeDownloads: [String: Double] = [:] // ModelID -> Progress (0.0 - 1.0)
+    @Published var completedDownloads: Set<String> = []
+    @Published var failedDownloads: [String: String] = [:] // ModelID -> Error Message
+    
+    private var urlSession: URLSession!
+    // Removed fragile in-memory maps in favor of taskDescription + UserDefaults
+    
+    // Publishers for specific events
+    let downloadComplete = PassthroughSubject<(modelId: String, location: URL, filename: String), Never>()
+    let downloadError = PassthroughSubject<(modelId: String, error: Error), Never>()
+    
+    override init() {
+        super.init()
+        let config = URLSessionConfiguration.background(withIdentifier: "com.arzamen.q2edgechat.backgroundDownload")
+        config.isDiscretionary = false
+        config.sessionSendsLaunchEvents = true
+        self.urlSession = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+    }
+    
+    /// Starts a download for a given model
+    func startDownload(url: URL, modelId: String, filename: String) {
+        // Prevent duplicate downloads
+        if activeDownloads[modelId] != nil {
+            print("⚠️ DownloadService: Download already active for \(modelId)")
+            return
+        }
+        
+        print("🚀 DownloadService: Starting background download for \(modelId) -> \(filename)")
+        
+        // Persist filename metadata
+        UserDefaults.standard.set(filename, forKey: "download_filename_\(modelId)")
+        
+        let task = urlSession.downloadTask(with: url)
+        task.taskDescription = modelId // Robust tracking
+        
+        DispatchQueue.main.async {
+            self.activeDownloads[modelId] = 0.0
+            self.failedDownloads.removeValue(forKey: modelId)
+        }
+        
+        task.resume()
+    }
+    
+    /// Checks if a model is currently downloading
+    func isDownloading(modelId: String) -> Bool {
+        return activeDownloads[modelId] != nil
+    }
+    
+    /// Configures the session for app relaunch (required for background sessions)
+    func restoreSession() {
+        // Accessing the session ensures delegate hooks up
+        _ = self.urlSession
+        
+        // Re-populate active downloads from running tasks
+        urlSession.getAllTasks { tasks in
+            DispatchQueue.main.async {
+                for task in tasks {
+                    if let modelId = task.taskDescription, task.state == .running {
+                        self.activeDownloads[modelId] = 0.0 // Will update on next progress event
+                    }
+                }
+            }
+        }
+        print("🔄 DownloadService: Session restored")
+    }
+    
+    // MARK: - URLSessionDownloadDelegate
+    
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        guard let modelId = downloadTask.taskDescription else {
+            print("❌ DownloadService: Unknown task finished (no taskDescription)")
+            return
+        }
+        
+        // Retrieve persisted filename
+        guard let filename = UserDefaults.standard.string(forKey: "download_filename_\(modelId)") else {
+            print("❌ DownloadService: Missing filename metadata for \(modelId)")
+            // Fallback could be implemented here, but better to fail loudly or default to .gguf
+             DispatchQueue.main.async {
+                 self.activeDownloads.removeValue(forKey: modelId)
+                 self.failedDownloads[modelId] = "Metadata missing (filename)"
+                 self.downloadError.send((modelId: modelId, error: NSError(domain: "DownloadService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing filename metadata"])))
+             }
+            return
+        }
+        
+        print("✅ DownloadService: Download finished for \(modelId) (\(filename)) at \(location)")
+        
+        // Move to a temporary location that we can access safely on the main thread/actor
+        // The file at `location` is deleted when this method returns.
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempFile = tempDir.appendingPathComponent(UUID().uuidString).appendingPathExtension(URL(string: filename)?.pathExtension ?? "gguf")
+        
+        do {
+            try FileManager.default.moveItem(at: location, to: tempFile)
+            
+            // Clean up metadata
+            UserDefaults.standard.removeObject(forKey: "download_filename_\(modelId)")
+            
+            DispatchQueue.main.async {
+                self.activeDownloads.removeValue(forKey: modelId)
+                self.completedDownloads.insert(modelId)
+                self.downloadComplete.send((modelId: modelId, location: tempFile, filename: filename))
+            }
+        } catch {
+            print("❌ DownloadService: Failed to move temp file: \(error)")
+            DispatchQueue.main.async {
+                self.activeDownloads.removeValue(forKey: modelId)
+                self.failedDownloads[modelId] = "Failed to move temp file: \(error.localizedDescription)"
+                self.downloadError.send((modelId: modelId, error: error))
+            }
+        }
+    }
+    
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        guard let modelId = downloadTask.taskDescription else { return }
+        
+        let progress = totalBytesExpectedToWrite > 0 ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : 0.0
+        
+        DispatchQueue.main.async {
+            self.activeDownloads[modelId] = progress
+        }
+    }
+    
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let modelId = task.taskDescription else { return }
+        
+        if let error = error {
+            print("❌ DownloadService: Task failed for \(modelId): \(error)")
+            DispatchQueue.main.async {
+                self.activeDownloads.removeValue(forKey: modelId)
+                self.failedDownloads[modelId] = error.localizedDescription
+                self.downloadError.send((modelId: modelId, error: error))
+            }
+        }
+    }
+    
+    func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        DispatchQueue.main.async {
+            print("🏁 DownloadService: All background events finished")
+        }
+    }
+}
 
 struct HFSibling: Codable {
     let rfilename: String
@@ -9,7 +158,9 @@ struct ModelDetail {
     let model: HFModel
     let readme: String?
     let hasGGUF: Bool
-    let ggufFiles: [HFSibling]
+    // Map of quantization label (e.g., "Q4_K_M") to the specific file
+    let quantizedFiles: [String: HFSibling]
+    let availableQuantizations: [String]
 }
 
 struct StaffPickModel {
@@ -21,85 +172,110 @@ struct StaffPickModel {
     let category: String
     
     static let staffPicks: [StaffPickModel] = [
+        // MARK: - Top Picks (Best Performance)
         StaffPickModel(
-            huggingFaceId: "microsoft/Phi-3-mini-4k-instruct-gguf",
-            displayName: "Phi-3 Mini",
-            description: "Microsoft's excellent small model with strong reasoning capabilities",
-            parameterCount: "3.8B",
-            specialty: "General Chat",
+            huggingFaceId: "bartowski/Llama-3.2-3B-Instruct-GGUF",
+            displayName: "Llama 3.2 3B",
+            description: "Meta's latest 3B model with excellent instruction following and reasoning",
+            parameterCount: "3.2B",
+            specialty: "Best Overall",
             category: "General"
         ),
         StaffPickModel(
-            huggingFaceId: "Qwen/Qwen2-1.5B-Instruct-GGUF",
-            displayName: "Qwen2 1.5B",
-            description: "Efficient multilingual model with great performance-to-size ratio",
-            parameterCount: "1.5B",
+            huggingFaceId: "Qwen/Qwen2.5-3B-Instruct-GGUF",
+            displayName: "Qwen 2.5 3B",
+            description: "Alibaba's powerful multilingual model with 32K context window",
+            parameterCount: "3B",
             specialty: "Multilingual",
             category: "General"
         ),
         StaffPickModel(
-            huggingFaceId: "PY007/TinyLlama-1.1B-Chat-v0.3-gguf",
-            displayName: "TinyLlama",
-            description: "Ultra-small model perfect for testing and resource-constrained environments",
-            parameterCount: "1.1B",
-            specialty: "Lightweight",
-            category: "General"
-        ),
-        StaffPickModel(
-            huggingFaceId: "google/gemma-2b-it-gguf",
-            displayName: "Gemma 2B",
-            description: "Google's efficient instruction-tuned model with strong safety features",
-            parameterCount: "2B",
-            specialty: "Safe AI",
-            category: "General"
-        ),
-        StaffPickModel(
-            huggingFaceId: "bartowski/Llama-3.2-1B-Instruct-GGUF",
-            displayName: "Llama 3.2 1B",
-            description: "Meta's latest small model with excellent instruction following",
-            parameterCount: "1B",
-            specialty: "Instruction Following",
-            category: "General"
-        ),
-        StaffPickModel(
-            huggingFaceId: "HuggingFaceTB/SmolLM-1.7B-Instruct-GGUF",
-            displayName: "SmolLM 1.7B",
-            description: "Highly optimized small model with impressive capabilities",
-            parameterCount: "1.7B",
-            specialty: "Optimized",
-            category: "General"
-        ),
-        StaffPickModel(
-            huggingFaceId: "stabilityai/stablelm-2-1_6b-chat-gguf",
-            displayName: "StableLM 2",
-            description: "Stability AI's chat-optimized model with balanced performance",
-            parameterCount: "1.6B",
-            specialty: "Chat",
-            category: "General"
-        ),
-        StaffPickModel(
-            huggingFaceId: "bartowski/CodeGemma-2b-GGUF",
-            displayName: "CodeGemma 2B",
-            description: "Google's coding-focused model for programming assistance",
-            parameterCount: "2B",
-            specialty: "Code Generation",
-            category: "Coding"
-        ),
-        StaffPickModel(
-            huggingFaceId: "microsoft/Phi-3.5-mini-instruct-gguf",
-            displayName: "Phi-3.5 Mini",
-            description: "Microsoft's updated reasoning model with enhanced capabilities",
+            huggingFaceId: "bartowski/Phi-3.1-mini-4k-instruct-GGUF",
+            displayName: "Phi-3.1 Mini",
+            description: "Microsoft's excellent reasoning model, punches above its weight",
             parameterCount: "3.8B",
             specialty: "Reasoning",
             category: "General"
         ),
+
+        // MARK: - Compact Models (Fast & Efficient)
+        StaffPickModel(
+            huggingFaceId: "bartowski/gemma-2-2b-it-GGUF",
+            displayName: "Gemma 2 2B",
+            description: "Google's efficient instruction model with strong safety features",
+            parameterCount: "2.6B",
+            specialty: "Safe AI",
+            category: "General"
+        ),
+        StaffPickModel(
+            huggingFaceId: "HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF",
+            displayName: "SmolLM2 1.7B",
+            description: "HuggingFace's optimized model trained on 11T tokens",
+            parameterCount: "1.7B",
+            specialty: "Efficient",
+            category: "General"
+        ),
+        StaffPickModel(
+            huggingFaceId: "brittlewis12/stablelm-2-zephyr-1_6b-GGUF",
+            displayName: "StableLM 2 Zephyr",
+            description: "Stability AI's chat-tuned model with balanced performance",
+            parameterCount: "1.6B",
+            specialty: "Chat",
+            category: "General"
+        ),
+
+        // MARK: - Ultra-Lightweight (Instant Response)
+        StaffPickModel(
+            huggingFaceId: "hugging-quants/Llama-3.2-1B-Instruct-Q4_K_M-GGUF",
+            displayName: "Llama 3.2 1B",
+            description: "Meta's smallest Llama, perfect for quick responses",
+            parameterCount: "1.2B",
+            specialty: "Lightweight",
+            category: "General"
+        ),
+        StaffPickModel(
+            huggingFaceId: "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
+            displayName: "TinyLlama 1.1B",
+            description: "Ultra-compact model for testing and fast interactions",
+            parameterCount: "1.1B",
+            specialty: "Ultra-Light",
+            category: "General"
+        ),
+
+        // MARK: - Coding Models
+        StaffPickModel(
+            huggingFaceId: "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
+            displayName: "Qwen 2.5 Coder 3B",
+            description: "Best-in-class coding model trained on 5.5T tokens of code",
+            parameterCount: "3B",
+            specialty: "Code Generation",
+            category: "Coding"
+        ),
         StaffPickModel(
             huggingFaceId: "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
-            displayName: "Qwen2.5 Coder",
-            description: "Latest Qwen model specialized for coding tasks",
+            displayName: "Qwen 2.5 Coder 1.5B",
+            description: "Compact coding assistant for quick programming help",
             parameterCount: "1.5B",
             specialty: "Code Generation",
             category: "Coding"
+        ),
+
+        // MARK: - Specialized
+        StaffPickModel(
+            huggingFaceId: "Qwen/Qwen3-4B-GGUF",
+            displayName: "Qwen 3 4B",
+            description: "Latest Qwen3 with advanced reasoning and 32K context",
+            parameterCount: "4B",
+            specialty: "Advanced",
+            category: "General"
+        ),
+        StaffPickModel(
+            huggingFaceId: "microsoft/Phi-3-mini-4k-instruct-gguf",
+            displayName: "Phi-3 Mini",
+            description: "Microsoft's proven reasoning model, great for complex tasks",
+            parameterCount: "3.8B",
+            specialty: "Reasoning",
+            category: "General"
         )
     ]
 }
@@ -162,6 +338,24 @@ struct HFModel: Codable {
 
 actor ModelManager {
     private let pageSize = 20
+    
+    enum ModelManagerError: Error {
+        case fileSystemError(String)
+        case downloadError(String)
+        case networkError(String)
+        
+        var localizedDescription: String {
+            switch self {
+            case .fileSystemError(let message):
+                return "File system error: \(message)"
+            case .downloadError(let message):
+                return "Download error: \(message)"
+            case .networkError(let message):
+                return "Network error: \(message)"
+            }
+        }
+    }
+    
     func fetchModels(search: String? = nil) async throws -> [HFModel] {
         var urlString = "https://huggingface.co/api/models?full=true&limit=\(pageSize)"
         if let search = search {
@@ -173,29 +367,10 @@ actor ModelManager {
         }
         let (data, _) = try await URLSession.shared.data(from: url)
         
-        // Debug: Print raw JSON response
-        if let jsonString = String(data: data, encoding: .utf8) {
-            print("🔍 Raw API Response (first 1000 chars): \(String(jsonString.prefix(1000)))")
-        }
-        
         do {
             return try JSONDecoder().decode([HFModel].self, from: data)
         } catch {
             print("🚨 JSON Decoding Error: \(error)")
-            if let decodingError = error as? DecodingError {
-                switch decodingError {
-                case .keyNotFound(let key, let context):
-                    print("Missing key: \(key.stringValue) at \(context.codingPath)")
-                case .typeMismatch(let type, let context):
-                    print("Type mismatch for type: \(type) at \(context.codingPath)")
-                case .valueNotFound(let type, let context):
-                    print("Value not found for type: \(type) at \(context.codingPath)")
-                case .dataCorrupted(let context):
-                    print("Data corrupted at \(context.codingPath)")
-                @unknown default:
-                    print("Unknown decoding error")
-                }
-            }
             throw error
         }
     }
@@ -237,9 +412,31 @@ actor ModelManager {
         return String(data: data, encoding: .utf8) ?? ""
     }
     
-    func checkGGUFFiles(model: HFModel) -> (hasGGUF: Bool, ggufFiles: [HFSibling]) {
+    nonisolated func checkGGUFFiles(model: HFModel) -> (hasGGUF: Bool, ggufFiles: [HFSibling]) {
         let ggufFiles = model.siblings.filter { $0.rfilename.hasSuffix(".gguf") }
         return (hasGGUF: !ggufFiles.isEmpty, ggufFiles: ggufFiles)
+    }
+    
+    // Helper to extract quantization from filename
+    nonisolated func parseQuantization(from filename: String) -> String {
+        // Common patterns: q4_k_m, q8_0, Q4_K_M, etc.
+        // We look for parts starting with q or Q followed by digits/letters
+        let lower = filename.lowercased()
+        
+        // Regex for Q4_K_M, Q8_0, IQ3_XS etc
+        // Matches "q" or "iq" followed by digit, then optional underscores and letters
+        let patterns = [
+            "(iq|q)[0-9]+_[0-9a-z_]+", // matches q4_k_m, iq3_xs
+            "(iq|q)[0-9]+"             // matches q4, q8
+        ]
+        
+        for pattern in patterns {
+            if let range = lower.range(of: pattern, options: .regularExpression) {
+                return String(filename[range]).uppercased()
+            }
+        }
+        
+        return "Unknown"
     }
     
     func fetchModelDetail(modelId: String) async throws -> ModelDetail {
@@ -247,11 +444,30 @@ actor ModelManager {
         let readme = try? await fetchModelREADME(modelId: modelId)
         let ggufInfo = checkGGUFFiles(model: model)
         
+        var quantizedFiles: [String: HFSibling] = [:]
+        
+        for file in ggufInfo.ggufFiles {
+            let quant = parseQuantization(from: file.rfilename)
+            // If multiple files map to same quantization (e.g. split files), we might overwrite.
+            // For now, simpler models usually have 1 file per quant.
+            // Prefer keeping the first one or logic to handle splits could be added here.
+            if quantizedFiles[quant] == nil {
+                quantizedFiles[quant] = file
+            }
+        }
+        
+        // Sort for predictable UI order: Q2 -> Q3 -> Q4 ... -> Q8
+        let availableQuantizations = quantizedFiles.keys.sorted { q1, q2 in
+            // Custom sort to handle numbers correctly (Q4 < Q8)
+            return q1.localizedStandardCompare(q2) == .orderedAscending
+        }
+        
         return ModelDetail(
             model: model,
             readme: readme,
             hasGGUF: ggufInfo.hasGGUF,
-            ggufFiles: ggufInfo.ggufFiles
+            quantizedFiles: quantizedFiles,
+            availableQuantizations: availableQuantizations
         )
     }
 
@@ -270,41 +486,31 @@ actor ModelManager {
         return filePath
     }
     
-    enum ModelManagerError: Error {
-        case fileSystemError(String)
-        case downloadError(String)
-        case networkError(String)
-        
-        var localizedDescription: String {
-            switch self {
-            case .fileSystemError(let message):
-                return "File system error: \(message)"
-            case .downloadError(let message):
-                return "Download error: \(message)"
-            case .networkError(let message):
-                return "Network error: \(message)"
-            }
-        }
-    }
-    
-    func downloadModelFile(from fileURL: URL, modelID: String, filename: String) async throws -> URL {
-        let (tempURL, _) = try await URLSession.shared.download(from: fileURL, delegate: nil)
+    /// Finalizes a download by moving the temp file to the permanent location
+    func finalizeDownload(tempURL: URL, modelID: String, filename: String) throws -> URL {
+        print("📥 ModelManager.finalizeDownload called")
+        print("   Temp URL: \(tempURL.path)")
+        print("   Model ID: \(modelID)")
         
         let fm = FileManager.default
         let destURL = try buildLocalModelURL(modelID: modelID, filename: filename)
         let destDir = destURL.deletingLastPathComponent()
         
-        print("dest: \(destDir.path())")
-            
+        print("   Destination: \(destURL.path)")
+        
+        // Create destination directory
         try fm.createDirectory(at: destDir, withIntermediateDirectories: true)
         
+        // Remove existing file if it exists
         if fm.fileExists(atPath: destURL.path) {
             try fm.removeItem(at: destURL)
         }
         
+        // Move file to destination (copy then delete temp since temp might be in a different volume or sandbox behavior)
+        // Move is generally safer/atomic if on same volume
         try fm.moveItem(at: tempURL, to: destURL)
+        print("   ✅ File finalized successfully")
         
-        // Return the absolute path to the downloaded file
         return destURL
     }
 }

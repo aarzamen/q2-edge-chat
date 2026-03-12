@@ -4,4 +4,10 @@
    <FileRef
       location = "self:">
    </FileRef>
+   <FileRef
+      location = "group:ImportLocalModelView.swift">
+   </FileRef>
+   <FileRef
+      location = "group:IMPORTING_LOCAL_MODELS.md">
+   </FileRef>
 </Workspace>

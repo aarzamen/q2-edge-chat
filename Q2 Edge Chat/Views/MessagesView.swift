@@ -49,7 +49,7 @@ struct MessagesView: View {
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                     }
             )
-            .onChange(of: messages.count) { _ in
+            .onChange(of: messages.count) {
                 withAnimation(.easeOut(duration: 0.5)) {
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }

@@ -33,12 +33,92 @@ enum LlamaEngineError: Error {
     }
 }
 
+/// Detects the appropriate prompt type based on the model filename/path
+enum ModelPromptType {
+    case llama3
+    case llama
+    case chatML  // Qwen, SmolLM, etc.
+    case phi
+    case gemma
+    case mistral
+    case alpaca
+
+    /// Detect prompt type from model filename or path
+    static func detect(from path: String) -> ModelPromptType {
+        let lowercased = path.lowercased()
+
+        // Llama 3.x models (including 3.1, 3.2, 3.3)
+        if lowercased.contains("llama-3") || lowercased.contains("llama3") ||
+           lowercased.contains("llama_3") || lowercased.contains("llama-3.") {
+            return .llama3
+        }
+
+        // Qwen models use ChatML format
+        if lowercased.contains("qwen") {
+            return .chatML
+        }
+
+        // Phi models
+        if lowercased.contains("phi-") || lowercased.contains("phi_") || lowercased.contains("phi3") {
+            return .phi
+        }
+
+        // Gemma models
+        if lowercased.contains("gemma") {
+            return .gemma
+        }
+
+        // Mistral models
+        if lowercased.contains("mistral") {
+            return .mistral
+        }
+
+        // SmolLM uses ChatML
+        if lowercased.contains("smollm") {
+            return .chatML
+        }
+
+        // StableLM uses ChatML (Zephyr template)
+        if lowercased.contains("stablelm") {
+            return .chatML
+        }
+
+        // TinyLlama uses ChatML (Zephyr-tuned)
+        if lowercased.contains("tinyllama") {
+            return .chatML
+        }
+
+        // Original Llama 2 format
+        if lowercased.contains("llama-2") || lowercased.contains("llama2") {
+            return .llama
+        }
+
+        // Default to ChatML as it's the most widely supported modern format
+        return .chatML
+    }
+
+    /// Convert to SwiftLlama Prompt.Type
+    var swiftLlamaType: Prompt.`Type` {
+        switch self {
+        case .llama3: return .llama3
+        case .llama: return .llama
+        case .chatML: return .chatML
+        case .phi: return .phi
+        case .gemma: return .gemma
+        case .mistral: return .mistral
+        case .alpaca: return .alpaca
+        }
+    }
+}
+
 final class LlamaEngine {
     private let swiftLlama: SwiftLlama
     private let modelURL: URL
+    private let promptType: ModelPromptType
 
     init(modelURL: URL) throws {
         self.modelURL = modelURL
+        self.promptType = ModelPromptType.detect(from: modelURL.path)
         
         guard FileManager.default.fileExists(atPath: modelURL.path) else {
             throw LlamaEngineError.modelNotFound(modelURL.path)
@@ -103,11 +183,13 @@ final class LlamaEngine {
         
         do {
             let llamaPrompt = Prompt(
-                type: .llama3,
+                type: promptType.swiftLlamaType,
                 systemPrompt: settings.systemPrompt,
                 userMessage: prompt
             )
-            
+
+            print("🤖 Using prompt type: \(promptType) for model: \(modelURL.lastPathComponent)")
+
             for try await token in await swiftLlama.start(for: llamaPrompt) {
                 try Task.checkCancellation()
                 tokenHandler(token)

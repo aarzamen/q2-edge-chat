@@ -86,6 +86,10 @@ struct ModelPickerView: View {
             Task {
                 do {
                     store = try ManifestStore()
+
+                    // Validate and clean up stale entries before loading
+                    _ = try? await store?.validateAndCleanup()
+
                     localModels = await store?.all() ?? []
                     cancellable = store?.didChange
                         .receive(on: RunLoop.main)
