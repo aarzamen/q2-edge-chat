@@ -33,11 +33,7 @@ final class ChatManager: ObservableObject {
     // MARK: - Initialization
 
     init() {
-        do {
-            self.manifest = try ManifestStore()
-        } catch {
-            fatalError("Failed to initialize ManifestStore: \(error.localizedDescription). Please ensure the app has proper file system permissions.")
-        }
+        self.manifest = ManifestStore.shared
 
         loadSessions()
 

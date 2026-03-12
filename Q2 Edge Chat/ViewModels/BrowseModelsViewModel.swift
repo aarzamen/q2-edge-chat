@@ -55,45 +55,40 @@ class BrowseModelsViewModel: ObservableObject {
     }
     
     init() {
-        do {
-            self.store = try ManifestStore()
-            store.didChange
-                .receive(on: RunLoop.main)
-                .sink { [weak self] _ in Task { await self?.loadLocal() } }
-                .store(in: &cancellables)
-            
-            // Setup search debouncing
-            $searchText
-                .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
-                .removeDuplicates()
-                .sink { [weak self] searchText in
-                    Task { await self?.performSearch(query: searchText) }
-                }
-                .store(in: &cancellables)
-            
-            // Subscribe to DownloadService updates
-            downloadService.$activeDownloads
-                .receive(on: RunLoop.main)
-                .assign(to: \.downloadProgress, on: self)
-                .store(in: &cancellables)
-            
-            downloadService.downloadComplete
-                .receive(on: RunLoop.main)
-                .sink { [weak self] (modelId: String, location: URL, filename: String) in
-                    Task { await self?.handleDownloadComplete(modelId: modelId, location: location, filename: filename) }
-                }
-                .store(in: &cancellables)
-            
-            downloadService.downloadError
-                .receive(on: RunLoop.main)
-                .sink { [weak self] (modelId: String, error: Error) in
-                    self?.errorMessage = "Download failed for \(modelId): \(error.localizedDescription)"
-                }
-                .store(in: &cancellables)
-                
-        } catch {
-            fatalError("Failed to initialize ManifestStore: \(error.localizedDescription). Please ensure the app has proper file system permissions.")
-        }
+        self.store = ManifestStore.shared
+        store.didChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in Task { await self?.loadLocal() } }
+            .store(in: &cancellables)
+        
+        // Setup search debouncing
+        $searchText
+            .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
+            .removeDuplicates()
+            .sink { [weak self] searchText in
+                Task { await self?.performSearch(query: searchText) }
+            }
+            .store(in: &cancellables)
+        
+        // Subscribe to DownloadService updates
+        downloadService.$activeDownloads
+            .receive(on: RunLoop.main)
+            .assign(to: \.downloadProgress, on: self)
+            .store(in: &cancellables)
+        
+        downloadService.downloadComplete
+            .receive(on: RunLoop.main)
+            .sink { [weak self] (modelId: String, location: URL, filename: String) in
+                Task { await self?.handleDownloadComplete(modelId: modelId, location: location, filename: filename) }
+            }
+            .store(in: &cancellables)
+        
+        downloadService.downloadError
+            .receive(on: RunLoop.main)
+            .sink { [weak self] (modelId: String, error: Error) in
+                self?.errorMessage = "Download failed for \(modelId): \(error.localizedDescription)"
+            }
+            .store(in: &cancellables)
     }
     
     func onQuantizationSelected(_ quant: String) {
