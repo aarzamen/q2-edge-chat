@@ -8,6 +8,9 @@
 import Foundation
 import Combine
 import SwiftUI
+import os
+
+private let logger = Logger(subsystem: "com.arzamen.q2edgechat", category: "ChatManager")
 
 @MainActor
 final class ChatManager: ObservableObject {
@@ -83,7 +86,7 @@ final class ChatManager: ObservableObject {
             // Trigger engine loading (ignoring return value)
             _ = try await engine(for: entry.localURL)
         } catch {
-            print("Failed to preload model \(id): \(error.localizedDescription)")
+            logger.warning("Failed to preload model \(id): \(error.localizedDescription)")
         }
     }
 
@@ -126,15 +129,21 @@ final class ChatManager: ObservableObject {
             // Await the engine (handling async load if needed)
             let engine = try await engine(for: entry.localURL)
 
+            // Build conversation context from prior messages
+            let conversationPrompt = buildConversationPrompt(
+                messages: sessions[idx].messages,
+                currentAssistantID: assistantID
+            )
+
             startTime = Date()
 
-            try await engine.generate(prompt: text, settings: sessions[idx].modelSettings) { token in
+            try await engine.generate(prompt: conversationPrompt, settings: sessions[idx].modelSettings) { token in
                 Task { @MainActor in
                     // FIX: Use message ID for lookup instead of instance comparison
                     guard idx < self.sessions.count,
                           self.sessions[idx].id == id,
                           let aiIndex = self.sessions[idx].messages.firstIndex(where: { $0.id == assistantID }) else {
-                        print("Warning: Could not find assistant message for token update")
+                        logger.warning("Could not find assistant message for token update")
                         return
                     }
 
@@ -183,6 +192,43 @@ final class ChatManager: ObservableObject {
 
         // Final save (immediate, not debounced)
         saveSessionsImmediately()
+    }
+
+    // MARK: - Conversation History
+
+    /// Builds a formatted conversation prompt from message history.
+    /// Includes up to ~20K characters of prior context for multi-turn coherence.
+    private func buildConversationPrompt(messages: [Message], currentAssistantID: UUID) -> String {
+        // Filter out the empty assistant placeholder and build history
+        let history = messages.filter { $0.id != currentAssistantID && !$0.text.isEmpty }
+
+        guard history.count > 1 else {
+            // Single message (the new user prompt) — no history needed
+            return history.last?.text ?? ""
+        }
+
+        var prompt = ""
+        let maxChars = 20_000
+
+        // Walk backwards to include the most recent context first
+        var included: [(Message.Speaker, String)] = []
+        var charCount = 0
+        for msg in history.reversed() {
+            if charCount + msg.text.count > maxChars { break }
+            included.insert((msg.speaker, msg.text), at: 0)
+            charCount += msg.text.count
+        }
+
+        for (speaker, text) in included {
+            switch speaker {
+            case .user:
+                prompt += "User: \(text)\n\n"
+            case .assistant:
+                prompt += "Assistant: \(text)\n\n"
+            }
+        }
+
+        return prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - Engine Management
@@ -259,7 +305,7 @@ final class ChatManager: ObservableObject {
             let url = try sessionsFileURL()
             try data.write(to: url, options: .atomic)
         } catch {
-            print("Failed to save sessions: \(error.localizedDescription)")
+            logger.error("Failed to save sessions: \(error.localizedDescription)")
         }
     }
 
@@ -276,7 +322,7 @@ final class ChatManager: ObservableObject {
             sessions = saved
             activeID = sessions.first?.id
         } catch {
-            print("Failed to load sessions: \(error.localizedDescription)")
+            logger.error("Failed to load sessions: \(error.localizedDescription)")
         }
     }
 

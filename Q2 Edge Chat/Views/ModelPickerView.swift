@@ -5,9 +5,9 @@ struct ModelPickerView: View {
     @Binding var selection: String
 
     @State private var localModels: [ManifestEntry] = []
-    @State private var store: ManifestStore?
-    @State private var storeError: String?
     @State private var cancellable: AnyCancellable?
+    
+    private let store = ManifestStore.shared
     
     private var selectedModel: ManifestEntry? {
         localModels.first { $0.id == selection }
@@ -84,19 +84,11 @@ struct ModelPickerView: View {
         .disabled(localModels.isEmpty)
         .onAppear {
             Task {
-                do {
-                    store = try ManifestStore()
-
-                    // Validate and clean up stale entries before loading
-                    _ = try? await store?.validateAndCleanup()
-
-                    localModels = await store?.all() ?? []
-                    cancellable = store?.didChange
-                        .receive(on: RunLoop.main)
-                        .sink { _ in Task { localModels = await store?.all() ?? [] } }
-                } catch {
-                    storeError = error.localizedDescription
-                }
+                _ = try? await store.validateAndCleanup()
+                localModels = await store.all()
+                cancellable = store.didChange
+                    .receive(on: RunLoop.main)
+                    .sink { _ in Task { localModels = await store.all() } }
             }
         }
         .onDisappear { cancellable?.cancel() }
@@ -120,3 +112,4 @@ struct ModelPickerView: View {
         return ""
     }
 }
+

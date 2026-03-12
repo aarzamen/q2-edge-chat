@@ -1,6 +1,9 @@
 import Foundation
 import SwiftLlama
 import Combine
+import os
+
+private let logger = Logger(subsystem: "com.arzamen.q2edgechat", category: "ModelManager")
 
 /// Manages background downloads for model files using URLSession.
 class DownloadService: NSObject, ObservableObject, URLSessionDownloadDelegate {
@@ -29,11 +32,11 @@ class DownloadService: NSObject, ObservableObject, URLSessionDownloadDelegate {
     func startDownload(url: URL, modelId: String, filename: String) {
         // Prevent duplicate downloads
         if activeDownloads[modelId] != nil {
-            print("⚠️ DownloadService: Download already active for \(modelId)")
+            logger.warning("Download already active for \(modelId)")
             return
         }
         
-        print("🚀 DownloadService: Starting background download for \(modelId) -> \(filename)")
+        logger.info("Starting background download for \(modelId) -> \(filename)")
         
         // Persist filename metadata
         UserDefaults.standard.set(filename, forKey: "download_filename_\(modelId)")
@@ -54,6 +57,20 @@ class DownloadService: NSObject, ObservableObject, URLSessionDownloadDelegate {
         return activeDownloads[modelId] != nil
     }
     
+    /// Cancels an active download for a given model
+    func cancelDownload(modelId: String) {
+        urlSession.getAllTasks { [weak self] tasks in
+            for task in tasks where task.taskDescription == modelId {
+                task.cancel()
+            }
+            DispatchQueue.main.async {
+                self?.activeDownloads.removeValue(forKey: modelId)
+                self?.failedDownloads.removeValue(forKey: modelId)
+                UserDefaults.standard.removeObject(forKey: "download_filename_\(modelId)")
+            }
+        }
+    }
+    
     /// Configures the session for app relaunch (required for background sessions)
     func restoreSession() {
         // Accessing the session ensures delegate hooks up
@@ -69,21 +86,20 @@ class DownloadService: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 }
             }
         }
-        print("🔄 DownloadService: Session restored")
+        logger.debug("Session restored")
     }
     
     // MARK: - URLSessionDownloadDelegate
     
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         guard let modelId = downloadTask.taskDescription else {
-            print("❌ DownloadService: Unknown task finished (no taskDescription)")
+            logger.error("Unknown task finished (no taskDescription)")
             return
         }
         
         // Retrieve persisted filename
         guard let filename = UserDefaults.standard.string(forKey: "download_filename_\(modelId)") else {
-            print("❌ DownloadService: Missing filename metadata for \(modelId)")
-            // Fallback could be implemented here, but better to fail loudly or default to .gguf
+            logger.error("Missing filename metadata for \(modelId)")
              DispatchQueue.main.async {
                  self.activeDownloads.removeValue(forKey: modelId)
                  self.failedDownloads[modelId] = "Metadata missing (filename)"
@@ -92,7 +108,7 @@ class DownloadService: NSObject, ObservableObject, URLSessionDownloadDelegate {
             return
         }
         
-        print("✅ DownloadService: Download finished for \(modelId) (\(filename)) at \(location)")
+        logger.info("Download finished for \(modelId) (\(filename))")
         
         // Move to a temporary location that we can access safely on the main thread/actor
         // The file at `location` is deleted when this method returns.
@@ -111,7 +127,7 @@ class DownloadService: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 self.downloadComplete.send((modelId: modelId, location: tempFile, filename: filename))
             }
         } catch {
-            print("❌ DownloadService: Failed to move temp file: \(error)")
+            logger.error("Failed to move temp file: \(error.localizedDescription)")
             DispatchQueue.main.async {
                 self.activeDownloads.removeValue(forKey: modelId)
                 self.failedDownloads[modelId] = "Failed to move temp file: \(error.localizedDescription)"
@@ -134,7 +150,7 @@ class DownloadService: NSObject, ObservableObject, URLSessionDownloadDelegate {
         guard let modelId = task.taskDescription else { return }
         
         if let error = error {
-            print("❌ DownloadService: Task failed for \(modelId): \(error)")
+            logger.error("Task failed for \(modelId): \(error.localizedDescription)")
             DispatchQueue.main.async {
                 self.activeDownloads.removeValue(forKey: modelId)
                 self.failedDownloads[modelId] = error.localizedDescription
@@ -144,9 +160,7 @@ class DownloadService: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
     
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        DispatchQueue.main.async {
-            print("🏁 DownloadService: All background events finished")
-        }
+        logger.debug("All background events finished")
     }
 }
 
@@ -370,7 +384,7 @@ actor ModelManager {
         do {
             return try JSONDecoder().decode([HFModel].self, from: data)
         } catch {
-            print("🚨 JSON Decoding Error: \(error)")
+            logger.error("JSON Decoding Error: \(error.localizedDescription)")
             throw error
         }
     }
@@ -488,15 +502,11 @@ actor ModelManager {
     
     /// Finalizes a download by moving the temp file to the permanent location
     func finalizeDownload(tempURL: URL, modelID: String, filename: String) throws -> URL {
-        print("📥 ModelManager.finalizeDownload called")
-        print("   Temp URL: \(tempURL.path)")
-        print("   Model ID: \(modelID)")
+        logger.info("finalizeDownload: modelID=\(modelID), tempURL=\(tempURL.lastPathComponent)")
         
         let fm = FileManager.default
         let destURL = try buildLocalModelURL(modelID: modelID, filename: filename)
         let destDir = destURL.deletingLastPathComponent()
-        
-        print("   Destination: \(destURL.path)")
         
         // Create destination directory
         try fm.createDirectory(at: destDir, withIntermediateDirectories: true)
@@ -506,10 +516,9 @@ actor ModelManager {
             try fm.removeItem(at: destURL)
         }
         
-        // Move file to destination (copy then delete temp since temp might be in a different volume or sandbox behavior)
-        // Move is generally safer/atomic if on same volume
+        // Move file to destination
         try fm.moveItem(at: tempURL, to: destURL)
-        print("   ✅ File finalized successfully")
+        logger.info("File finalized successfully at \(destURL.lastPathComponent)")
         
         return destURL
     }

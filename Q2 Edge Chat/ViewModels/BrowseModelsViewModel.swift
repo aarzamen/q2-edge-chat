@@ -1,6 +1,9 @@
 import Foundation
 import SwiftUI
 import Combine
+import os
+
+private let logger = Logger(subsystem: "com.arzamen.q2edgechat", category: "BrowseModels")
 
 @MainActor
 class BrowseModelsViewModel: ObservableObject {
@@ -100,10 +103,10 @@ class BrowseModelsViewModel: ObservableObject {
         do {
             let removedIDs = try await store.validateAndCleanup()
             if !removedIDs.isEmpty {
-                print("🧹 Cleaned up \(removedIDs.count) invalid model entries")
+                logger.info("Cleaned up \(removedIDs.count) invalid model entries")
             }
         } catch {
-            print("⚠️ Failed to validate manifest: \(error)")
+            logger.warning("Failed to validate manifest: \(error.localizedDescription)")
         }
 
         localEntries = await store.all()
@@ -172,7 +175,7 @@ class BrowseModelsViewModel: ObservableObject {
     func download(_ model: HFModel) async {
         // Prevent duplicate downloads
         guard downloadService.activeDownloads[model.id] == nil else {
-            print("⚠️ DOWNLOAD: Already downloading \(model.id)")
+            logger.info("Already downloading \(model.id)")
             return
         }
         
@@ -183,7 +186,7 @@ class BrowseModelsViewModel: ObservableObject {
             // Fallback strategy if we don't have detail loaded (e.g. from staff pick direct download, although we load detail first now)
             // Or if explicit selection failed
             let msg = "No file found for quantization: \(selectedQuantization)"
-            print("❌ DOWNLOAD ERROR: \(msg)")
+            logger.error("No file found for quantization: \(self.selectedQuantization)")
             errorMessage = msg
             return
         }
@@ -195,16 +198,14 @@ class BrowseModelsViewModel: ObservableObject {
             return
         }
         
-        print("📥 DOWNLOAD START: \(model.id) (\(selectedQuantization))")
-        print("   URL: \(url.absoluteString)")
-        print("   File: \(sibling.rfilename)")
+        logger.info("Download start: \(model.id) (\(self.selectedQuantization)) -> \(sibling.rfilename)")
         
         // Start background download with filename context
         downloadService.startDownload(url: url, modelId: model.id, filename: sibling.rfilename)
     }
     
     private func handleDownloadComplete(modelId: String, location: URL, filename: String) async {
-        print("🎉 ViewModel handling download completion for \(modelId) -> \(filename)")
+        logger.info("Handling download completion for \(modelId) -> \(filename)")
         
         do {
             let finalURL = try await manager.finalizeDownload(tempURL: location, modelID: modelId, filename: filename)
@@ -216,7 +217,7 @@ class BrowseModelsViewModel: ObservableObject {
             )
             try await store.add(entry)
             await loadLocal()
-            print("   ✅ Manifest updated")
+            logger.info("Manifest updated for \(modelId)")
         } catch {
             errorMessage = "Failed to finalize \(modelId): \(error.localizedDescription)"
         }

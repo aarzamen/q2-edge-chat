@@ -238,11 +238,13 @@ struct ModelDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showFullReadme = false
     
-    private var relativeFormatter: RelativeDateTimeFormatter {
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter
-    }
+    }()
+    
+    private static let isoFormatter = ISO8601DateFormatter()
     
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -328,11 +330,11 @@ struct ModelDetailView: View {
                             }
                             
                             if let lastModified = modelDetail.model.lastModified,
-                               let date = ISO8601DateFormatter().date(from: lastModified) {
+                               let date = Self.isoFormatter.date(from: lastModified) {
                                 HStack(spacing: 4) {
                                     Image(systemName: "clock")
                                         .foregroundColor(.secondary)
-                                    Text(relativeFormatter.localizedString(for: date, relativeTo: Date()))
+                                    Text(Self.relativeFormatter.localizedString(for: date, relativeTo: Date()))
                                         .foregroundColor(.secondary)
                                 }
                             }
@@ -422,12 +424,12 @@ struct ModelDetailView: View {
 struct ModelBrowserView: View {
     @StateObject private var vm = BrowseModelsViewModel()
     
-    private var dateFormatter: DateFormatter {
+    private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         formatter.timeStyle = .short
         return formatter
-    }
+    }()
 
     var body: some View {
         ScrollView {
@@ -449,7 +451,7 @@ struct ModelBrowserView: View {
                                         Text(entry.id)
                                             .lineLimit(1)
                                             .font(.body)
-                                        Text("Downloaded on \(entry.downloadedAt, formatter: dateFormatter)")
+                                        Text("Downloaded on \(entry.downloadedAt, formatter: Self.dateFormatter)")
                                             .font(.caption)
                                             .foregroundColor(.secondary)
                                     }

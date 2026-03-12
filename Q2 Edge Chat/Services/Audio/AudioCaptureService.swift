@@ -118,7 +118,9 @@ actor AudioCaptureService {
         }
 
         guard status != .error, error == nil else {
+            #if DEBUG
             print("Audio conversion error: \(error?.localizedDescription ?? "unknown")")
+            #endif
             return
         }
 

@@ -107,9 +107,6 @@ struct VoiceInputConfig {
     /// Set to nil to disable auto-stop
     var autoStopSilenceDuration: TimeInterval? = 2.0
 
-    /// Whether to show partial (unconfirmed) transcriptions
-    var showPartialResults: Bool = true
-
     static let `default` = VoiceInputConfig()
 
     /// Configuration optimized for medical conversations

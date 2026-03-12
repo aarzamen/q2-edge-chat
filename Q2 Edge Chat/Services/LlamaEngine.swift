@@ -188,7 +188,9 @@ final class LlamaEngine {
                 userMessage: prompt
             )
 
+            #if DEBUG
             print("🤖 Using prompt type: \(promptType) for model: \(modelURL.lastPathComponent)")
+            #endif
 
             for try await token in await swiftLlama.start(for: llamaPrompt) {
                 try Task.checkCancellation()

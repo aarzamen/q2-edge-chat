@@ -3,13 +3,21 @@ import SwiftUI
 struct MessageRow: View {
     let message: Message
     
-    private var dateFormatter: DateFormatter {
+    private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         return formatter
-    }
+    }()
 
     var body: some View {
+        GeometryReader { geo in
+            let maxBubbleWidth = geo.size.width * 0.75
+            messageContent(maxBubbleWidth: maxBubbleWidth)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func messageContent(maxBubbleWidth: CGFloat) -> some View {
         HStack(alignment: .bottom, spacing: 8) {
             if message.speaker == .assistant {
                 VStack(alignment: .leading, spacing: 4) {
@@ -29,7 +37,7 @@ struct MessageRow: View {
                         alignment: .leading
                     )
                 }
-                .frame(maxWidth: 280, alignment: .leading)
+                .frame(maxWidth: maxBubbleWidth, alignment: .leading)
                 
                 Spacer(minLength: 40)
             } else {
@@ -52,7 +60,7 @@ struct MessageRow: View {
                         alignment: .trailing
                     )
                 }
-                .frame(maxWidth: 280, alignment: .trailing)
+                .frame(maxWidth: maxBubbleWidth, alignment: .trailing)
             }
         }
         .padding(.horizontal, 16)

@@ -25,8 +25,9 @@ struct ModernButton: ButtonStyle {
 
 struct FrontPageView: View {
     @State private var localModels: [ManifestEntry] = []
-    @State private var store: ManifestStore?
     @State private var cancellable: AnyCancellable?
+    
+    private let store = ManifestStore.shared
     
     var body: some View {
         NavigationStack {
@@ -123,27 +124,6 @@ struct FrontPageView: View {
                             }
                         }
                         .buttonStyle(ModernButton(color: Color(.systemGray5), textColor: .primary))
-                        
-                        // Import Local Model Button
-                        // TODO: Uncomment after adding ImportLocalModelView.swift to your project
-                        /*
-                        if let store = store {
-                            NavigationLink(destination: ImportLocalModelView(manifestStore: store) {
-                                // Refresh local models after import
-                                Task {
-                                    localModels = await store.all()
-                                }
-                            }) {
-                                HStack {
-                                    Image(systemName: "square.and.arrow.down")
-                                        .font(.title3)
-                                    Text("Import Local Model")
-                                        .fontWeight(.semibold)
-                                }
-                            }
-                            .buttonStyle(ModernButton(color: Color.green.opacity(0.15), textColor: .green))
-                        }
-                        */
                     }
                     .padding(.horizontal, 20)
                     
@@ -168,28 +148,10 @@ struct FrontPageView: View {
     
     private func loadModels() {
         Task {
-            do {
-                store = try ManifestStore()
-                localModels = await store?.all() ?? []
-                cancellable = store?.didChange
-                    .receive(on: RunLoop.main)
-                    .sink { _ in Task { localModels = await store?.all() ?? [] } }
-                
-                // DEBUG: Print the actual paths
-                if let libraryURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first {
-                    let modelsPath = libraryURL.appendingPathComponent("Models")
-                    print("📂 Models directory: \(modelsPath.path)")
-                    print("📂 To open in Finder, run: open '\(modelsPath.path)'")
-                }
-                
-                if let supportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-                    print("📂 App Support directory: \(supportURL.path)")
-                    print("📂 To open in Finder, run: open '\(supportURL.path)'")
-                }
-                
-            } catch {
-                print("Failed to load models: \(error)")
-            }
+            localModels = await store.all()
+            cancellable = store.didChange
+                .receive(on: RunLoop.main)
+                .sink { _ in Task { localModels = await store.all() } }
         }
     }
 }

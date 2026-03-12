@@ -1,5 +1,8 @@
 import Foundation
 import Combine
+import os
+
+private let manifestLogger = Logger(subsystem: "com.arzamen.q2edgechat", category: "ManifestStore")
 
 // MARK: - Discovered Local File
 
@@ -300,7 +303,7 @@ actor ManifestStore {
             let exists = fm.fileExists(atPath: entry.localURL.path)
             if !exists {
                 removedIDs.append(entry.id)
-                print("⚠️ Removing invalid manifest entry: \(entry.id) - file not found at \(entry.localURL.path)")
+                manifestLogger.info("Removing invalid manifest entry: \(entry.id) - file not found")
             }
             return exists
         }
@@ -358,7 +361,7 @@ actor ManifestStore {
                 )
             }
         } catch {
-            print("Error scanning Documents folder: \(error)")
+            manifestLogger.error("Error scanning Documents folder: \(error.localizedDescription)")
             return []
         }
     }
