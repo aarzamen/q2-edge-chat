@@ -155,9 +155,10 @@ struct ManifestEntry: Codable, Identifiable {
     }
     
     private static func findModelInSimulator(filename: String) -> URL? {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
         let simulatorBasePaths = [
-            "/Users/michaelgathara/Library/Developer/CoreSimulator/Devices",
-            "/Users/michaelgathara/Library/Developer/Xcode/UserData/Previews/Simulator Devices"
+            "\(home)/Library/Developer/CoreSimulator/Devices",
+            "\(home)/Library/Developer/Xcode/UserData/Previews/Simulator Devices"
         ]
         
         for basePath in simulatorBasePaths {
@@ -198,11 +199,20 @@ struct ManifestEntry: Codable, Identifiable {
 }
 
 actor ManifestStore {
+    /// Shared singleton — all callers must use this to avoid stale in-memory state
+    static let shared: ManifestStore = {
+        do {
+            return try ManifestStore()
+        } catch {
+            fatalError("Failed to initialize ManifestStore: \(error.localizedDescription)")
+        }
+    }()
+
     private let fileURL: URL
     private var entries: [ManifestEntry] = []
     nonisolated let didChange = PassthroughSubject<Void, Never>() 
 
-    init() throws {
+    private init() throws {
         let fm = FileManager.default
         let support = try fm.url(
             for: .applicationSupportDirectory,

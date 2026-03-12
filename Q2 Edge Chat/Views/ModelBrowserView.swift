@@ -218,9 +218,6 @@ struct StaffPickCard: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
-                        .onTapGesture {
-                            
-                        }
                         Spacer()
                     }
                 }
